@@ -545,7 +545,7 @@ DatabaseSize MySQLCatalog::GetDatabaseSize(ClientContext &context) {
 	}
 	auto &postgres_transaction = MySQLTransaction::Get(context, *this);
 	auto query = StringUtil::Replace(R"(
-SELECT SUM(data_length + index_length)
+SELECT CAST(SUM(data_length + index_length) AS UNSIGNED)
 FROM information_schema.tables
 WHERE table_schema = ${SCHEMA_NAME};
 )",

@@ -56,8 +56,12 @@ bool MySQLCapabilities::SupportsType(const LogicalType &type, bool for_cast) {
 	case LogicalTypeId::TIME:
 	case LogicalTypeId::FLOAT:  // CAST(x AS FLOAT) - MySQL 8.0.17+
 	case LogicalTypeId::DOUBLE: // CAST(x AS DOUBLE) - MySQL 8.0.17+
-	case LogicalTypeId::DECIMAL:
 		return true;
+	case LogicalTypeId::DECIMAL:
+		// MySQL decimals have at most 65 digits, 30 of them after the decimal point - a literal with more digits is
+		// read as an approximate (DOUBLE) value
+		return DecimalType::GetWidth(type) <= MySQLTypeConfig::MAX_DECIMAL_WIDTH &&
+		       DecimalType::GetScale(type) <= MySQLTypeConfig::MAX_DECIMAL_SCALE;
 	default:
 		return false;
 	}

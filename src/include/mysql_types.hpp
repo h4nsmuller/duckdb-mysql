@@ -38,6 +38,13 @@ struct MySQLTypeConfig {
 	bool tinyint1_as_boolean = false;
 	bool time_as_time = false;
 	bool incomplete_dates_as_nulls = false;
+	//! The max_decimal_width setting of the session: decimals wider than this keep the mapping that predates
+	//! DECIMALs of more than 38 digits (38 is the compatibility mode of that setting)
+	uint32_t max_decimal_width = Decimal::DEFAULT_MAX_WIDTH;
+
+	//! The widest DECIMAL of MySQL and its largest scale
+	static constexpr uint32_t MAX_DECIMAL_WIDTH = 65;
+	static constexpr uint32_t MAX_DECIMAL_SCALE = 30;
 
 	MySQLTypeConfig();
 	MySQLTypeConfig(Context &context);

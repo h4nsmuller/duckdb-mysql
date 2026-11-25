@@ -16,6 +16,18 @@ static bool GetBoolOption(Context &context, const std::string &opt_name) {
 	return false;
 }
 
+static uint32_t GetMaxDecimalWidth(Context &context) {
+	Value val;
+	if (context.TryGetCurrentSetting(Identifier("max_decimal_width"), val) && !val.IsNull()) {
+		auto width = MinValue<uint64_t>(val.GetValue<uint64_t>(), NumericLimits<uint32_t>::Maximum());
+		return MaxValue<uint32_t>(NumericCast<uint32_t>(width), Decimal::MAX_WIDTH_INT128);
+	}
+	return Decimal::DEFAULT_MAX_WIDTH;
+}
+
+constexpr uint32_t MySQLTypeConfig::MAX_DECIMAL_WIDTH;
+constexpr uint32_t MySQLTypeConfig::MAX_DECIMAL_SCALE;
+
 MySQLTypeConfig::MySQLTypeConfig() {
 }
 
@@ -26,7 +38,8 @@ MySQLTypeConfig::MySQLTypeConfig(Context &context)
     : bit1_as_boolean(GetBoolOption(context, "mysql_bit1_as_boolean")),
       tinyint1_as_boolean(GetBoolOption(context, "mysql_tinyint1_as_boolean")),
       time_as_time(GetBoolOption(context, "mysql_time_as_time")),
-      incomplete_dates_as_nulls(GetBoolOption(context, "mysql_incomplete_dates_as_nulls")) {
+      incomplete_dates_as_nulls(GetBoolOption(context, "mysql_incomplete_dates_as_nulls")),
+      max_decimal_width(GetMaxDecimalWidth(context)) {
 }
 
 LogicalType MySQLTypes::TypeToLogicalType(const MySQLTypeConfig &type_config, const MySQLTypeData &type_info) {
@@ -87,10 +100,18 @@ LogicalType MySQLTypes::TypeToLogicalType(const MySQLTypeConfig &type_config, co
 	} else if (type_info.type_name == "datetime") {
 		return LogicalType::TIMESTAMP;
 	} else if (type_info.type_name == "decimal") {
-		if (type_info.precision > 0 && type_info.precision <= 38) {
-			return LogicalType::DECIMAL(type_info.precision, type_info.scale);
+		// a MySQL DECIMAL column has at most 65 digits, 30 of them after the decimal point, and maps to the DECIMAL
+		// of the same width and scale; the result of an expression can be reported with a few more digits
+		if (type_info.precision > 0 && type_info.scale >= 0 && type_info.scale <= type_info.precision) {
+			if (type_info.precision <= int64_t(type_config.max_decimal_width)) {
+				return LogicalType::DECIMAL(NumericCast<uint32_t>(type_info.precision),
+				                            NumericCast<uint32_t>(type_info.scale));
+			}
+			// the session does not bind decimals this wide (max_decimal_width)
+			return LogicalType::DOUBLE;
 		}
-		return LogicalType::DOUBLE;
+		// not a valid width and scale - the values are read as their exact text
+		return LogicalType::VARCHAR;
 	} else if (type_info.type_name == "json") {
 		// FIXME
 		return LogicalType::VARCHAR;
@@ -232,10 +253,20 @@ LogicalType MySQLTypes::ToMySQLType(const MySQLTypeConfig &type_config, const Lo
 	case LogicalTypeId::DOUBLE:
 	case LogicalTypeId::BLOB:
 	case LogicalTypeId::DATE:
-	case LogicalTypeId::DECIMAL:
 	case LogicalTypeId::TIMESTAMP:
 	case LogicalTypeId::VARCHAR:
 		return input;
+	case LogicalTypeId::DECIMAL: {
+		auto width = DecimalType::GetWidth(input);
+		auto scale = DecimalType::GetScale(input);
+		if (width > MySQLTypeConfig::MAX_DECIMAL_WIDTH || scale > MySQLTypeConfig::MAX_DECIMAL_SCALE) {
+			throw BinderException("MySQL does not support the type \"%s\" - a MySQL DECIMAL has at most %d digits, "
+			                      "at most %d of them after the decimal point",
+			                      input.ToString(), MySQLTypeConfig::MAX_DECIMAL_WIDTH,
+			                      MySQLTypeConfig::MAX_DECIMAL_SCALE);
+		}
+		return input;
+	}
 	case LogicalTypeId::TIME:
 	case LogicalTypeId::TIME_NS:
 		return type_config.time_as_time ? input : LogicalType::VARCHAR;
@@ -253,7 +284,13 @@ LogicalType MySQLTypes::ToMySQLType(const MySQLTypeConfig &type_config, const Lo
 	case LogicalTypeId::TIMESTAMP_TZ:
 		return LogicalType::TIMESTAMP;
 	case LogicalTypeId::HUGEINT:
-		return LogicalType::DOUBLE;
+	case LogicalTypeId::UHUGEINT:
+		// both have up to 39 digits
+		if (type_config.max_decimal_width > Decimal::MAX_WIDTH_INT128) {
+			return LogicalType::DECIMAL(Decimal::MAX_WIDTH_INT128 + 1, 0);
+		}
+		// the session does not bind decimals this wide (max_decimal_width)
+		return input.id() == LogicalTypeId::HUGEINT ? LogicalType::DOUBLE : LogicalType::VARCHAR;
 	default:
 		return LogicalType::VARCHAR;
 	}
@@ -293,7 +330,7 @@ LogicalType MySQLTypes::ToLogicalType(optional_ptr<ParsedExpression> type_expr_p
 	return ToLogicalType(type_expr);
 }
 
-static uint8_t ExtractTinyIntValue(const ParsedExpression *parsed_expr) {
+static uint32_t ExtractDecimalModifier(const ParsedExpression *parsed_expr) {
 	if (!parsed_expr) {
 		throw InvalidInputException("MySQLTypes::ToLogicalType: empty DECIMAL type modifier expression");
 	}
@@ -305,13 +342,13 @@ static uint8_t ExtractTinyIntValue(const ParsedExpression *parsed_expr) {
 	const ConstantExpression &const_expr = parsed_expr->Cast<ConstantExpression>();
 	Value const_val = const_expr.GetLiteral().ToValue();
 	string cast_err;
-	std::optional<Value> int_val = const_val.DefaultTryCastAs(LogicalType::TINYINT, &cast_err, true);
+	std::optional<Value> int_val = const_val.DefaultTryCastAs(LogicalType::UINTEGER, &cast_err, true);
 	if (!int_val.has_value()) {
 		throw InvalidInputException(
-		    "MySQLTypes::ToLogicalType: DECIMAL type modifier must be a TINYINT, expression: \"%s\"",
+		    "MySQLTypes::ToLogicalType: DECIMAL type modifier must be a non-negative integer, expression: \"%s\"",
 		    parsed_expr->ToString());
 	}
-	return TinyIntValue::Get(int_val.value());
+	return UIntegerValue::Get(int_val.value());
 }
 
 static string ExtractVarcharCollation(const ParsedExpression *parsed_expr) {
@@ -342,10 +379,10 @@ LogicalType MySQLTypes::ToLogicalType(const TypeExpression &type_expr) {
 		const vector<unique_ptr<ParsedExpression>> &children = type_expr.GetChildren();
 		unique_ptr<DecimalTypeInfo> type_info = make_uniq<DecimalTypeInfo>(18, 3);
 		if (children.size() > 0) {
-			type_info->width = ExtractTinyIntValue(children[0].get());
+			type_info->width = ExtractDecimalModifier(children[0].get());
 		}
 		if (children.size() > 1) {
-			type_info->scale = ExtractTinyIntValue(children[1].get());
+			type_info->scale = ExtractDecimalModifier(children[1].get());
 		}
 		return LogicalType(type_id, std::move(type_info));
 	}

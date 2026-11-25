@@ -60,7 +60,7 @@ physical_plan	<!REGEX>:.*AGGREGATE.*
 statement error
 SELECT SUM(CAST(i AS DECIMAL('foo'))) FROM s.small_tbl
 ----
-DECIMAL type modifier must be a TINYINT
+DECIMAL type modifier must be a non-negative integer
 
 query I
 SELECT SUM(CAST(i AS DECIMAL)) FROM s.small_tbl
