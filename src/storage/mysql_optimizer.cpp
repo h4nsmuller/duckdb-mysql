@@ -45,13 +45,13 @@ void MySQLOptimizer::Optimize(OptimizerExtensionInput &input, unique_ptr<Logical
 			auto &get = logical_get.get();
 			auto &function_name = get.function.GetName().GetIdentifierName();
 			if (MySQLCatalog::IsMySQLScan(function_name)) {
-				auto &bind_data = get.bind_data->Cast<MySQLBindData>();
+				auto &bind_data = get.bind_data.write().Cast<MySQLBindData>();
 				if (bind_data.optimizer_streaming == MySQLResultStreaming::UNINITIALIZED ||
 				    result_streaming == MySQLResultStreaming::FORCE_MATERIALIZATION) {
 					bind_data.optimizer_streaming = result_streaming;
 				}
 			} else if (MySQLCatalog::IsMySQLQuery(function_name)) {
-				auto &bind_data = get.bind_data->Cast<MySQLQueryBindData>();
+				auto &bind_data = get.bind_data.write().Cast<MySQLQueryBindData>();
 				if (bind_data.optimizer_streaming == MySQLResultStreaming::UNINITIALIZED ||
 				    result_streaming == MySQLResultStreaming::FORCE_MATERIALIZATION) {
 					bind_data.optimizer_streaming = result_streaming;

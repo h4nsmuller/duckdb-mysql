@@ -105,7 +105,7 @@ static void MySQLScan(ClientContext &context, TableFunctionInput &data, DataChun
 		auto attached_table = MySQLTableEntry::Lookup(context, bdata.table_name);
 		MySQLTableEntry &table_entry = attached_table.Get<MySQLTableEntry>();
 		auto &transaction = MySQLTransaction::Get(context, table_entry.ParentCatalog());
-		auto &con = transaction.GetConnection();
+		auto &con = transaction.GetConnection(context);
 		gstate.result = con.Query(context, gstate.scan_query, bdata.optimizer_streaming);
 		gstate.exec_state = MySQLQueryExecState::EXECUTED;
 	}
@@ -168,7 +168,7 @@ static InsertionOrderPreservingMap<string> MySQLScanToString(TableFunctionToStri
 	return result;
 }
 
-static void MySQLScanSerialize(Serializer &serializer, const optional_ptr<FunctionData> bind_data_p,
+static void MySQLScanSerialize(Serializer &serializer, const optional_ptr<const FunctionData> bind_data_p,
                                const BoundTableFunction &function) {
 	throw NotImplementedException("MySQLScanSerialize");
 }
@@ -374,7 +374,7 @@ static unique_ptr<FunctionData> MySQLQueryBind(ClientContext &context, TableFunc
 			prepare_connection_id = pinned_connection.Id();
 		} else {
 			MySQLTransaction &transaction = MySQLTransaction::Get(context, catalog);
-			MySQLConnection &conn = transaction.GetConnection();
+			MySQLConnection &conn = transaction.GetConnection(context);
 			conn_ptr = &conn;
 			prepare_connection_id = transaction.GetConnectionId();
 			tran_restrict_dml = transaction.GetAccessMode() == AccessMode::READ_ONLY;
@@ -527,7 +527,7 @@ static void MySQLQueryScan(ClientContext &context, TableFunctionInput &data, Dat
 			auto attached_catalog = MySQLCatalog::Lookup(context, bdata.catalog_name);
 			MySQLCatalog &catalog = attached_catalog.Get<MySQLCatalog>();
 			auto &transaction = MySQLTransaction::Get(context, catalog);
-			MySQLConnection &conn = transaction.GetConnection();
+			MySQLConnection &conn = transaction.GetConnection(context);
 			conn_ptr = &conn;
 			current_connection_id = transaction.GetConnectionId();
 		}
@@ -616,7 +616,7 @@ static void MySQLPinConnection(DataChunk &args, ExpressionState &state, Vector &
 	auto catalog_name_strt = UnifiedVectorFormat::GetData<string_t>(catalog_name_data)[0];
 	string catalog_name(catalog_name_strt.GetData(), catalog_name_strt.GetSize());
 
-	auto &catalog = GetCatalogByName(state.GetContext(), catalog_name);
+	auto &catalog = GetCatalogByName(state.GetClientContext(), catalog_name);
 	auto &pool = catalog.GetConnectionPool();
 
 	auto conn = pool.ForceAcquire();
@@ -649,7 +649,7 @@ static void MySQLClosePinnedConnection(DataChunk &args, ExpressionState &state, 
 	}
 	auto conn_id = UnifiedVectorFormat::GetData<uint64_t>(conn_id_data)[0];
 
-	auto &catalog = GetCatalogByName(state.GetContext(), catalog_name);
+	auto &catalog = GetCatalogByName(state.GetClientContext(), catalog_name);
 	{ auto conn = catalog.GetConnectionPool().UnpinConnection(conn_id); }
 
 	auto &result_validity = FlatVector::ValidityMutable(result);

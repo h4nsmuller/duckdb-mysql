@@ -11,6 +11,7 @@
 #include "duckdb/catalog/catalog.hpp"
 #include "duckdb/common/enums/access_mode.hpp"
 #include "duckdb/main/client_context.hpp"
+#include "duckdb/main/context.hpp"
 #include "duckdb/transaction/transaction.hpp"
 
 #include "mysql_connection.hpp"
@@ -25,29 +26,30 @@ enum class MySQLTransactionState { TRANSACTION_NOT_YET_STARTED, TRANSACTION_STAR
 
 class MySQLTransaction : public Transaction {
 public:
-	MySQLTransaction(MySQLCatalog &mysql_catalog, TransactionManager &manager, ClientContext &context);
+	MySQLTransaction(MySQLCatalog &mysql_catalog, TransactionManager &manager, Context &context);
 
 	void Start();
-	void Commit();
-	void Rollback();
+	void Commit(ClientContext &context);
+	void Rollback(ClientContext &context);
 
-	MySQLConnection &GetConnection();
+	MySQLConnection &GetConnection(ClientContext &context);
 	uint64_t GetConnectionId();
 	static MySQLTransaction &Get(ClientContext &context, Catalog &catalog);
 	AccessMode GetAccessMode() const {
 		return access_mode;
 	}
 
-	//! Throws if the client context of this transaction is no longer available
-	shared_ptr<ClientContext> GetContext();
+	const MySQLTypeConfig &GetTypeConfig() const {
+		return conn_init_opts.type_config;
+	}
 	MySQLCatalog &GetCatalog() {
 		return catalog;
 	}
 	optional_ptr<CatalogEntry> ReferenceEntry(shared_ptr<CatalogEntry> &entry);
 
 private:
-	static bool GetTransactionsEnabled(ClientContext &context);
-	static MySQLConnectionInitOptions GetConnectionInitOptions(ClientContext &context);
+	static bool GetTransactionsEnabled(Context &context);
+	static MySQLConnectionInitOptions GetConnectionInitOptions(Context &context);
 
 	MySQLCatalog &catalog;
 	const bool transactions_enabled = true;

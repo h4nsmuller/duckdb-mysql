@@ -122,7 +122,7 @@ static bool GetBoolSetting(ClientContext &context, const std::string &name) {
 TableFunction MySQLTableEntry::GetScanFunction(ClientContext &context, unique_ptr<FunctionData> &bind_data) {
 	MySQLCatalog &catalog = ParentCatalog().Cast<MySQLCatalog>();
 	MySQLTransaction &transaction = MySQLTransaction::Get(context, catalog);
-	auto result = make_uniq<MySQLBindData>(*this, transaction.context);
+	auto result = make_uniq<MySQLBindData>(*this, context.shared_from_this());
 	for (auto &col : columns.Logical()) {
 		result->types.push_back(col.GetType());
 		result->names.emplace_back(col.GetName().GetIdentifierName());
@@ -139,7 +139,7 @@ TableFunction MySQLTableEntry::GetScanFunction(ClientContext &context, unique_pt
 
 TableStorageInfo MySQLTableEntry::GetStorageInfo(ClientContext &context) {
 	auto &transaction = Transaction::Get(context, catalog).Cast<MySQLTransaction>();
-	auto &db = transaction.GetConnection();
+	auto &db = transaction.GetConnection(context);
 	TableStorageInfo result;
 	result.cardinality = 0;
 	result.index_info = db.GetIndexInfo(name.GetIdentifierName());

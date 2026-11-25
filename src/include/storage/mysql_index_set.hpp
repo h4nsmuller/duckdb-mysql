@@ -17,10 +17,10 @@ class MySQLIndexSet : public MySQLInSchemaSet {
 public:
 	MySQLIndexSet(MySQLSchemaEntry &schema);
 
-	void DropEntry(MySQLTransaction &transaction, DropInfo &info) override;
+	void DropEntry(ClientContext &context, MySQLTransaction &transaction, DropInfo &info) override;
 
 protected:
-	void LoadEntries(MySQLTransaction &transaction) override;
+	void LoadEntries(ClientContext &context, MySQLTransaction &transaction) override;
 };
 
 } // namespace duckdb

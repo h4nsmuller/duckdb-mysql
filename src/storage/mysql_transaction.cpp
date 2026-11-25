@@ -4,7 +4,7 @@
 
 namespace duckdb {
 
-MySQLTransaction::MySQLTransaction(MySQLCatalog &mysql_catalog, TransactionManager &manager, ClientContext &context)
+MySQLTransaction::MySQLTransaction(MySQLCatalog &mysql_catalog, TransactionManager &manager, Context &context)
     : Transaction(manager, context), catalog(mysql_catalog), transactions_enabled(GetTransactionsEnabled(context)),
       access_mode(mysql_catalog.access_mode), conn_init_opts(GetConnectionInitOptions(context)) {
 }
@@ -13,7 +13,7 @@ void MySQLTransaction::Start() {
 	// no-op
 }
 
-void MySQLTransaction::Commit() {
+void MySQLTransaction::Commit(ClientContext &context) {
 	if (!pooled_connection || !transactions_enabled) {
 		return;
 	}
@@ -22,8 +22,7 @@ void MySQLTransaction::Commit() {
 
 	if (transaction_state == MySQLTransactionState::TRANSACTION_STARTED) {
 		try {
-			auto client_context = GetContext();
-			pooled_connection.GetConnection().Execute(*client_context, "COMMIT");
+			pooled_connection.GetConnection().Execute(context, "COMMIT");
 			transaction_state = MySQLTransactionState::TRANSACTION_FINISHED;
 		} catch (...) {
 			pooled_connection.Invalidate();
@@ -32,7 +31,7 @@ void MySQLTransaction::Commit() {
 	}
 }
 
-void MySQLTransaction::Rollback() {
+void MySQLTransaction::Rollback(ClientContext &context) {
 	if (!pooled_connection || !transactions_enabled) {
 		return;
 	}
@@ -41,10 +40,7 @@ void MySQLTransaction::Rollback() {
 
 	if (transaction_state == MySQLTransactionState::TRANSACTION_STARTED) {
 		try {
-			// throws when the transaction is rolled back while its client context is being destroyed,
-			// the connection is invalidated in this case, the server rolls back the transaction when it is closed
-			auto client_context = GetContext();
-			pooled_connection.GetConnection().Execute(*client_context, "ROLLBACK");
+			pooled_connection.GetConnection().Execute(context, "ROLLBACK");
 			transaction_state = MySQLTransactionState::TRANSACTION_FINISHED;
 		} catch (...) {
 			pooled_connection.Invalidate();
@@ -53,7 +49,7 @@ void MySQLTransaction::Rollback() {
 	}
 }
 
-MySQLConnection &MySQLTransaction::GetConnection() {
+MySQLConnection &MySQLTransaction::GetConnection(ClientContext &context) {
 	lock_guard<mutex> guard(transaction_lock);
 
 	if (!pooled_connection) {
@@ -63,8 +59,7 @@ MySQLConnection &MySQLTransaction::GetConnection() {
 		}
 		this->pooled_connection = catalog.GetConnectionPool().Acquire();
 		try {
-			auto client_context = GetContext();
-			pooled_connection.GetConnection().Initialize(*client_context, conn_init_opts);
+			pooled_connection.GetConnection().Initialize(context, conn_init_opts);
 		} catch (...) {
 			pooled_connection.Invalidate();
 			throw;
@@ -77,8 +72,7 @@ MySQLConnection &MySQLTransaction::GetConnection() {
 			query += " READ ONLY";
 		}
 		try {
-			auto client_context = GetContext();
-			pooled_connection.GetConnection().Execute(*client_context, query);
+			pooled_connection.GetConnection().Execute(context, query);
 			transaction_state = MySQLTransactionState::TRANSACTION_STARTED;
 		} catch (...) {
 			pooled_connection.Invalidate();
@@ -97,7 +91,7 @@ MySQLTransaction &MySQLTransaction::Get(ClientContext &context, Catalog &catalog
 	return Transaction::Get(context, catalog).Cast<MySQLTransaction>();
 }
 
-bool MySQLTransaction::GetTransactionsEnabled(ClientContext &context) {
+bool MySQLTransaction::GetTransactionsEnabled(Context &context) {
 	Value val;
 	if (context.TryGetCurrentSetting("mysql_enable_transactions", val)) {
 		return BooleanValue::Get(val);
@@ -105,7 +99,7 @@ bool MySQLTransaction::GetTransactionsEnabled(ClientContext &context) {
 	return true;
 }
 
-MySQLConnectionInitOptions MySQLTransaction::GetConnectionInitOptions(ClientContext &context) {
+MySQLConnectionInitOptions MySQLTransaction::GetConnectionInitOptions(Context &context) {
 	MySQLConnectionInitOptions res;
 	res.type_config = MySQLTypeConfig(context);
 	Value val;
@@ -113,15 +107,6 @@ MySQLConnectionInitOptions MySQLTransaction::GetConnectionInitOptions(ClientCont
 		res.time_zone = StringValue::Get(val);
 	}
 	return res;
-}
-
-shared_ptr<ClientContext> MySQLTransaction::GetContext() {
-	auto result = context.lock();
-	if (!result) {
-		throw InternalException(
-		    "MySQLTransaction::GetContext - client context of the transaction is no longer available");
-	}
-	return result;
 }
 
 optional_ptr<CatalogEntry> MySQLTransaction::ReferenceEntry(shared_ptr<CatalogEntry> &entry) {

@@ -47,7 +47,7 @@ optional_ptr<CatalogEntry> MySQLSchemaEntry::CreateTable(CatalogTransaction tran
 		TryDropEntry(transaction.GetContext(), CatalogType::TABLE_ENTRY, table_name.GetIdentifierName());
 	}
 	auto &mysql_transaction = GetMySQLTransaction(transaction);
-	return tables.CreateTable(mysql_transaction, info);
+	return tables.CreateTable(transaction.GetContext(), mysql_transaction, info);
 }
 
 optional_ptr<CatalogEntry> MySQLSchemaEntry::CreateFunction(CatalogTransaction transaction, CreateFunctionInfo &info) {
@@ -97,7 +97,8 @@ string GetMySQLCreateIndex(CreateIndexInfo &info, TableCatalogEntry &tbl) {
 optional_ptr<CatalogEntry> MySQLSchemaEntry::CreateIndex(CatalogTransaction transaction, CreateIndexInfo &info,
                                                          TableCatalogEntry &table) {
 	auto &mysql_transaction = MySQLTransaction::Get(transaction.GetContext(), table.catalog);
-	mysql_transaction.GetConnection().Execute(transaction.GetContext(), GetMySQLCreateIndex(info, table));
+	mysql_transaction.GetConnection(transaction.GetContext())
+	    .Execute(transaction.GetContext(), GetMySQLCreateIndex(info, table));
 	return nullptr;
 }
 
@@ -139,8 +140,9 @@ optional_ptr<CatalogEntry> MySQLSchemaEntry::CreateView(CatalogTransaction trans
 		}
 	}
 	auto &mysql_transaction = GetMySQLTransaction(transaction);
-	mysql_transaction.GetConnection().Execute(transaction.GetContext(), GetMySQLCreateView(info));
-	return tables.RefreshTable(mysql_transaction, info.GetViewName().GetIdentifierName());
+	mysql_transaction.GetConnection(transaction.GetContext())
+	    .Execute(transaction.GetContext(), GetMySQLCreateView(info));
+	return tables.RefreshTable(transaction.GetContext(), mysql_transaction, info.GetViewName().GetIdentifierName());
 }
 
 optional_ptr<CatalogEntry> MySQLSchemaEntry::CreateType(CatalogTransaction transaction, CreateTypeInfo &info) {
@@ -166,18 +168,13 @@ optional_ptr<CatalogEntry> MySQLSchemaEntry::CreatePragmaFunction(CatalogTransac
 	throw BinderException("MySQL databases do not support creating pragma functions");
 }
 
-optional_ptr<CatalogEntry> MySQLSchemaEntry::CreateCollation(CatalogTransaction transaction,
-                                                             CreateCollationInfo &info) {
-	throw BinderException("MySQL databases do not support creating collations");
-}
-
 void MySQLSchemaEntry::Alter(CatalogTransaction transaction, AlterInfo &info) {
 	if (info.type != AlterType::ALTER_TABLE) {
 		throw BinderException("Only altering tables is supported for now");
 	}
 	auto &alter = info.Cast<AlterTableInfo>();
 	auto &mysql_transaction = GetMySQLTransaction(transaction);
-	tables.AlterTable(mysql_transaction, alter);
+	tables.AlterTable(transaction.GetContext(), mysql_transaction, alter);
 }
 
 bool CatalogTypeIsSupported(CatalogType type) {
@@ -197,7 +194,7 @@ void MySQLSchemaEntry::Scan(ClientContext &context, CatalogType type,
 		return;
 	}
 	auto &transaction = MySQLTransaction::Get(context, catalog);
-	GetCatalogSet(type).Scan(transaction, callback);
+	GetCatalogSet(type).Scan(context, transaction, callback);
 }
 void MySQLSchemaEntry::Scan(CatalogType type, const std::function<void(CatalogEntry &)> &callback) {
 	throw NotImplementedException("Scan without context not supported");
@@ -205,7 +202,7 @@ void MySQLSchemaEntry::Scan(CatalogType type, const std::function<void(CatalogEn
 
 void MySQLSchemaEntry::DropEntry(ClientContext &context, DropInfo &info) {
 	auto &transaction = MySQLTransaction::Get(context, catalog);
-	GetCatalogSet(info.type).DropEntry(transaction, info);
+	GetCatalogSet(info.type).DropEntry(context, transaction, info);
 }
 
 optional_ptr<CatalogEntry> MySQLSchemaEntry::LookupEntry(CatalogTransaction transaction,
@@ -215,7 +212,7 @@ optional_ptr<CatalogEntry> MySQLSchemaEntry::LookupEntry(CatalogTransaction tran
 		return nullptr;
 	}
 	auto &mysql_transaction = GetMySQLTransaction(transaction);
-	return GetCatalogSet(lookup_type).GetEntry(mysql_transaction, lookup_info.GetEntryName());
+	return GetCatalogSet(lookup_type).GetEntry(transaction.GetContext(), mysql_transaction, lookup_info.GetEntryName());
 }
 
 MySQLCatalogSet &MySQLSchemaEntry::GetCatalogSet(CatalogType type) {

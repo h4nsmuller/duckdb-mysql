@@ -471,19 +471,19 @@ optional_ptr<CatalogEntry> MySQLCatalog::CreateSchema(CatalogTransaction transac
 		try_drop.SetName(info.GetQualifiedName().Schema());
 		try_drop.if_not_found = OnEntryNotFound::RETURN_NULL;
 		try_drop.cascade = false;
-		schemas.DropEntry(mysql_transaction, try_drop);
+		schemas.DropEntry(transaction.GetContext(), mysql_transaction, try_drop);
 	}
-	return schemas.CreateSchema(mysql_transaction, info);
+	return schemas.CreateSchema(transaction.GetContext(), mysql_transaction, info);
 }
 
 void MySQLCatalog::DropSchema(ClientContext &context, DropInfo &info) {
 	auto &mysql_transaction = MySQLTransaction::Get(context, *this);
-	return schemas.DropEntry(mysql_transaction, info);
+	return schemas.DropEntry(context, mysql_transaction, info);
 }
 
 void MySQLCatalog::ScanSchemas(ClientContext &context, std::function<void(SchemaCatalogEntry &)> callback) {
 	auto &mysql_transaction = MySQLTransaction::Get(context, *this);
-	schemas.Scan(mysql_transaction, [&](CatalogEntry &schema) { callback(schema.Cast<MySQLSchemaEntry>()); });
+	schemas.Scan(context, mysql_transaction, [&](CatalogEntry &schema) { callback(schema.Cast<MySQLSchemaEntry>()); });
 }
 
 optional_ptr<SchemaCatalogEntry> MySQLCatalog::LookupSchema(CatalogTransaction transaction,
@@ -498,7 +498,7 @@ optional_ptr<SchemaCatalogEntry> MySQLCatalog::LookupSchema(CatalogTransaction t
 		schema_name = default_schema;
 	}
 	auto &mysql_transaction = MySQLTransaction::Get(transaction.GetContext(), *this);
-	auto entry = schemas.GetEntry(mysql_transaction, schema_name);
+	auto entry = schemas.GetEntry(transaction.GetContext(), mysql_transaction, schema_name);
 	if (!entry && if_not_found != OnEntryNotFound::RETURN_NULL) {
 		throw BinderException("Schema with name \"%s\" not found", schema_name);
 	}
@@ -518,10 +518,10 @@ void MySQLCatalog::MaterializeMySQLScans(PhysicalOperator &op) {
 		auto &table_scan = op.Cast<PhysicalTableScan>();
 		auto &function_name = table_scan.function.GetName().GetIdentifierName();
 		if (MySQLCatalog::IsMySQLScan(function_name)) {
-			auto &bind_data = table_scan.bind_data->Cast<MySQLBindData>();
+			auto &bind_data = table_scan.bind_data.write().Cast<MySQLBindData>();
 			bind_data.optimizer_streaming = MySQLResultStreaming::FORCE_MATERIALIZATION;
 		} else if (MySQLCatalog::IsMySQLQuery(function_name)) {
-			auto &bind_data = table_scan.bind_data->Cast<MySQLQueryBindData>();
+			auto &bind_data = table_scan.bind_data.write().Cast<MySQLQueryBindData>();
 			bind_data.optimizer_streaming = MySQLResultStreaming::FORCE_MATERIALIZATION;
 		}
 	}
@@ -550,7 +550,7 @@ FROM information_schema.tables
 WHERE table_schema = ${SCHEMA_NAME};
 )",
 	                                 "${SCHEMA_NAME}", MySQLUtils::WriteLiteral(default_schema));
-	auto result = postgres_transaction.GetConnection().Query(context, query);
+	auto result = postgres_transaction.GetConnection(context).Query(context, query);
 	DatabaseSize size;
 	size.free_blocks = 0;
 	size.total_blocks = 0;

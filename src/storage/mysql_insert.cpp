@@ -151,7 +151,7 @@ SinkResultType MySQLInsert::Sink(ExecutionContext &context, DataChunk &chunk, Op
 
 	auto &gstate = input.global_state.Cast<MySQLInsertGlobalState>();
 	auto &transaction = MySQLTransaction::Get(context.client, gstate.table.catalog);
-	auto &con = transaction.GetConnection();
+	auto &con = transaction.GetConnection(context.client);
 	// cast to varchar
 	D_ASSERT(chunk.ColumnCount() == gstate.varchar_chunk.ColumnCount());
 	chunk.Flatten();
@@ -253,7 +253,7 @@ SinkFinalizeType MySQLInsert::Finalize(Pipeline &pipeline, Event &event, ClientC
 	if (!gstate.insert_values.empty()) {
 		// perform the final insert
 		auto &transaction = MySQLTransaction::Get(context, gstate.table.catalog);
-		auto &con = transaction.GetConnection();
+		auto &con = transaction.GetConnection(context);
 		con.Execute(context, gstate.base_insert_query + gstate.insert_values);
 	}
 	return SinkFinalizeType::READY;

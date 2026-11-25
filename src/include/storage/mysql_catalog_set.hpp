@@ -24,16 +24,17 @@ class MySQLCatalogSet {
 public:
 	MySQLCatalogSet(Catalog &catalog);
 
-	optional_ptr<CatalogEntry> GetEntry(MySQLTransaction &transaction, const string &name);
-	virtual void DropEntry(MySQLTransaction &transaction, DropInfo &info);
-	void Scan(MySQLTransaction &transaction, const std::function<void(CatalogEntry &)> &callback);
+	optional_ptr<CatalogEntry> GetEntry(ClientContext &context, MySQLTransaction &transaction, const string &name);
+	virtual void DropEntry(ClientContext &context, MySQLTransaction &transaction, DropInfo &info);
+	void Scan(ClientContext &context, MySQLTransaction &transaction,
+	          const std::function<void(CatalogEntry &)> &callback);
 	virtual optional_ptr<CatalogEntry> CreateEntry(MySQLTransaction &transaction, shared_ptr<CatalogEntry> entry);
 	void ClearEntries();
 
 protected:
-	virtual void LoadEntries(MySQLTransaction &transaction) = 0;
+	virtual void LoadEntries(ClientContext &context, MySQLTransaction &transaction) = 0;
 
-	void TryLoadEntries(MySQLTransaction &transaction);
+	void TryLoadEntries(ClientContext &context, MySQLTransaction &transaction);
 
 	void EraseEntryInternal(const string &name);
 

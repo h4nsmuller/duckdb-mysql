@@ -8,7 +8,7 @@
 
 namespace duckdb {
 
-static bool GetBoolOption(ClientContext &context, const std::string &opt_name) {
+static bool GetBoolOption(Context &context, const std::string &opt_name) {
 	Value val;
 	if (context.TryGetCurrentSetting(Identifier(opt_name), val)) {
 		return BooleanValue::Get(val);
@@ -19,7 +19,10 @@ static bool GetBoolOption(ClientContext &context, const std::string &opt_name) {
 MySQLTypeConfig::MySQLTypeConfig() {
 }
 
-MySQLTypeConfig::MySQLTypeConfig(ClientContext &context)
+MySQLTypeConfig::MySQLTypeConfig(ClientContext &context) : MySQLTypeConfig(context.GetContext()) {
+}
+
+MySQLTypeConfig::MySQLTypeConfig(Context &context)
     : bit1_as_boolean(GetBoolOption(context, "mysql_bit1_as_boolean")),
       tinyint1_as_boolean(GetBoolOption(context, "mysql_tinyint1_as_boolean")),
       time_as_time(GetBoolOption(context, "mysql_time_as_time")),

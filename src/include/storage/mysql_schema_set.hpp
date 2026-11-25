@@ -23,10 +23,11 @@ public:
 	explicit MySQLSchemaSet(Catalog &catalog, vector<string> schemas_to_load);
 
 public:
-	optional_ptr<CatalogEntry> CreateSchema(MySQLTransaction &transaction, CreateSchemaInfo &info);
+	optional_ptr<CatalogEntry> CreateSchema(ClientContext &context, MySQLTransaction &transaction,
+	                                        CreateSchemaInfo &info);
 
 protected:
-	void LoadEntries(MySQLTransaction &transaction) override;
+	void LoadEntries(ClientContext &context, MySQLTransaction &transaction) override;
 
 	vector<string> schemas_to_load;
 };

@@ -22,29 +22,30 @@ optional_ptr<CatalogEntry> MySQLCatalogSet::TryGetEntry(MySQLTransaction &transa
 	return transaction.ReferenceEntry(entry->second);
 }
 
-optional_ptr<CatalogEntry> MySQLCatalogSet::GetEntry(MySQLTransaction &transaction, const string &name) {
+optional_ptr<CatalogEntry> MySQLCatalogSet::GetEntry(ClientContext &context, MySQLTransaction &transaction,
+                                                     const string &name) {
 	lock_guard<mutex> l1(clear_lock);
-	TryLoadEntries(transaction);
+	TryLoadEntries(context, transaction);
 	optional_ptr<CatalogEntry> res = TryGetEntry(transaction, name);
 	if (res) {
 		return res;
 	}
 	// reload attempt on not found
 	ClearEntriesNoLock();
-	TryLoadEntries(transaction);
+	TryLoadEntries(context, transaction);
 	return TryGetEntry(transaction, name);
 }
 
-void MySQLCatalogSet::TryLoadEntries(MySQLTransaction &transaction) {
+void MySQLCatalogSet::TryLoadEntries(ClientContext &context, MySQLTransaction &transaction) {
 	lock_guard<mutex> l(load_lock);
 	if (is_loaded) {
 		return;
 	}
 	is_loaded = true;
-	LoadEntries(transaction);
+	LoadEntries(context, transaction);
 }
 
-void MySQLCatalogSet::DropEntry(MySQLTransaction &transaction, DropInfo &info) {
+void MySQLCatalogSet::DropEntry(ClientContext &context, MySQLTransaction &transaction, DropInfo &info) {
 	string drop_query = "DROP ";
 	drop_query += CatalogTypeToString(info.type) + " ";
 	if (info.if_not_found == OnEntryNotFound::RETURN_NULL) {
@@ -56,8 +57,7 @@ void MySQLCatalogSet::DropEntry(MySQLTransaction &transaction, DropInfo &info) {
 			drop_query += " CASCADE";
 		}
 	}
-	auto context = transaction.GetContext();
-	transaction.GetConnection().Execute(*context, drop_query);
+	transaction.GetConnection(context).Execute(context, drop_query);
 
 	// erase the entry from the catalog set
 	EraseEntryInternal(info.GetQualifiedName().Name().GetIdentifierName());
@@ -68,9 +68,10 @@ void MySQLCatalogSet::EraseEntryInternal(const string &name) {
 	entries.erase(name);
 }
 
-void MySQLCatalogSet::Scan(MySQLTransaction &transaction, const std::function<void(CatalogEntry &)> &callback) {
+void MySQLCatalogSet::Scan(ClientContext &context, MySQLTransaction &transaction,
+                           const std::function<void(CatalogEntry &)> &callback) {
 	lock_guard<mutex> l1(clear_lock);
-	TryLoadEntries(transaction);
+	TryLoadEntries(context, transaction);
 	lock_guard<mutex> l2(entry_lock);
 	for (auto &entry : entries) {
 		callback(*entry.second);

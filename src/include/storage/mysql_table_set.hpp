@@ -25,21 +25,23 @@ public:
 	explicit MySQLTableSet(MySQLSchemaEntry &schema);
 
 public:
-	optional_ptr<CatalogEntry> CreateTable(MySQLTransaction &transaction, BoundCreateTableInfo &info);
+	optional_ptr<CatalogEntry> CreateTable(ClientContext &context, MySQLTransaction &transaction,
+	                                       BoundCreateTableInfo &info);
 
-	static unique_ptr<MySQLTableInfo> GetTableInfo(MySQLTransaction &transaction, MySQLSchemaEntry &schema,
-	                                               const string &table_name);
-	optional_ptr<CatalogEntry> RefreshTable(MySQLTransaction &transaction, const string &table_name);
+	static unique_ptr<MySQLTableInfo> GetTableInfo(ClientContext &context, MySQLTransaction &transaction,
+	                                               MySQLSchemaEntry &schema, const string &table_name);
+	optional_ptr<CatalogEntry> RefreshTable(ClientContext &context, MySQLTransaction &transaction,
+	                                        const string &table_name);
 
-	void AlterTable(MySQLTransaction &transaction, AlterTableInfo &info);
+	void AlterTable(ClientContext &context, MySQLTransaction &transaction, AlterTableInfo &info);
 
 protected:
-	void LoadEntries(MySQLTransaction &transaction) override;
+	void LoadEntries(ClientContext &context, MySQLTransaction &transaction) override;
 
-	void AlterTable(MySQLTransaction &transaction, RenameTableInfo &info);
-	void AlterTable(MySQLTransaction &transaction, RenameColumnInfo &info);
-	void AlterTable(MySQLTransaction &transaction, AddColumnInfo &info);
-	void AlterTable(MySQLTransaction &transaction, RemoveColumnInfo &info);
+	void AlterTable(ClientContext &context, MySQLTransaction &transaction, RenameTableInfo &info);
+	void AlterTable(ClientContext &context, MySQLTransaction &transaction, RenameColumnInfo &info);
+	void AlterTable(ClientContext &context, MySQLTransaction &transaction, AddColumnInfo &info);
+	void AlterTable(ClientContext &context, MySQLTransaction &transaction, RemoveColumnInfo &info);
 
 	static void AddColumn(MySQLTransaction &transaction, MySQLResult &result, MySQLTableInfo &table_info,
 	                      idx_t column_offset = 0);
